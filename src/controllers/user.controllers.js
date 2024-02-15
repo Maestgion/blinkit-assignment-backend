@@ -7,7 +7,7 @@ import { options } from "../constants.js";
 
 const generateTokens = async (userId) => {
     try {
-        const user = await User.findOne({ _id: userId });
+        const user = await User.findOne( userId);
         const accessToken = user.generateAccessToken();
         const refreshToken = user.generateRefreshToken();
 
@@ -34,7 +34,6 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Please fill all the details");
     }
 
-    console.log(email);
 
     const existedUser = await User.findOne({
         $or: [{ username }, { email }],
@@ -97,7 +96,7 @@ const registerUser = asyncHandler(async (req, res) => {
 });
 
 const loginUser = asyncHandler(async (req, res) => {
-    //  generate a token and send it back to client side
+
 
     const { username, password } = req.body;
 
@@ -116,7 +115,7 @@ const loginUser = asyncHandler(async (req, res) => {
         throw new ApiError(401, "Invalid password");
     }
 
-    const { accessToken, refreshToken } = generateTokens(user._id);
+    const { accessToken, refreshToken } = await generateTokens(user._id);
 
     // updated user
     const loggedUser = await User.findById({_id: user._id}).select(
@@ -124,10 +123,38 @@ const loginUser = asyncHandler(async (req, res) => {
     );
 
 
-    res.status(200)
-    .cookie("accessToken", options)
-    .cookie("refreshToken", options)
+   return res.status(200)
+    .cookie("accessToken", accessToken,  options)
+    .cookie("refreshToken", refreshToken, options)
     .json(new ApiResponse(200, {user: loggedUser, accessToken, refreshToken}, "user logged in successfully"))
 });
 
-export { registerUser, loginUser };
+
+const logoutUser = asyncHandler(async (req, res)=>{
+   
+    await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $unset:{
+                refreshToken: 1
+            }
+        },
+        {
+            new: true,
+        }
+        )
+
+    res.status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(
+        new ApiResponse(200, {}, "user logged out successfully")
+    )
+})
+
+export { 
+    registerUser,
+    loginUser, 
+    logoutUser
+
+};
