@@ -315,11 +315,109 @@ const resetPassword = asyncHandler(async (req, res)=>{
             },
             $unset: {
                 resetPasswordToken: 1
-            }
-        }
+            }, 
+           
+        }, 
+        { new: true }
     )
 
     return res.status(200).json(new ApiResponse(200, {}, "password update successfully"))
 })
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken, changePassword, forgotPassword, resetPassword };
+const updateAccountDetails = asyncHandler(async (req, res)=>{
+
+    const { username, fullName, email } = req.body;
+
+    if (!username && !fullName && !email) {
+        throw new ApiError(400, "Please provide all fields");
+    }
+
+    const user = await User.findById(req.user?._id)
+
+    if (fullName) user.fullName = fullName;
+    if (username) user.username = username;
+    if (email) user.email = email;
+
+    await user.save();
+
+   
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            {
+                fullName: user.fullName,
+                username: user.username,
+                email: user.email
+            },
+            "account details updated successfully"
+        )
+    );
+}
+)
+
+const updateUserAvatar = asyncHandler(async (req, res) => {
+    
+    const avatarLocalPath = req.file?.path;
+
+    if (!avatarLocalPath) {
+        throw new ApiError(400, "No image provided");
+    }
+
+    const avatar = await cloudinaryUpload(avatarLocalPath);
+
+    if (!avatar.url) {
+        throw new ApiError(500, "Server Error : Failed to upload Image");
+    }
+
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: {
+                avatar: avatar?.url,
+            },
+        },
+        { new: true }
+    ).select("-password -refreshToken");
+
+    return res.status(200).json(200, user, "avatar updated successfully");
+});
+
+const updateUserCoverImage = asyncHandler(async (req, res) => {
+  
+    const coverImagaeLocalPath = req.file?.path;
+
+    if (!coverImagaeLocalPath) {
+        throw new ApiError(400, "No image provided");
+    }
+
+    const coverImagae = await cloudinaryUpload(avatarLocalPath);
+
+    if (!coverImagae.url) {
+        throw new ApiError(500, "Server Error : Failed to upload Image");
+    }
+
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: {
+                coverImagae: coverImagae?.url,
+            },
+        },
+        { new: true }
+    ).select("-password -refreshToken");
+
+    return res.status(200).json(200, user, "cover image updated successfully");
+});
+
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+    
+    return res
+        .status(200)
+        .json(new ApiResponse(200, req.user, "User fetched successfully"));
+});
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken, changePassword, forgotPassword, resetPassword , updateAccountDetails, updateUserAvatar, updateUserCoverImage, getCurrentUser};
