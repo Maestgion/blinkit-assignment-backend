@@ -5,8 +5,9 @@ import { User } from "../models/user.model.js";
 import uploadOnCloudinary from "../utils/cloudinary.js";
 import { options } from "../constants.js";
 import jwt from "jsonwebtoken";
+import { sendMail } from "../utils/sendMail.js";
 
-const generateTokens = async (userId) => {
+const generateAccessAndRefreshTokens = async (userId) => {
     try {
         const user = await User.findOne(userId);
         const accessToken = user.generateAccessToken();
@@ -23,6 +24,21 @@ const generateTokens = async (userId) => {
         );
     }
 };
+
+const generatePasswordResetToken = async (userId)=>{
+    try{
+        const user = await User.findBy(userId)
+        const token = user.generatePasswordResetToken()
+        user.resetPasswordToken = token
+        await user.save({ validateBeforeSave: false });
+        return token
+    }catch(error){
+        throw new ApiError(
+            500,
+            "error occured while generating password reset token"
+        );
+    }
+}
 
 const registerUser = asyncHandler(async (req, res) => {
     const { fullName, username, email, password } = req.body;
@@ -83,7 +99,7 @@ const registerUser = asyncHandler(async (req, res) => {
     });
 
     const createdUser = await User.findById({ _id: user._id }).select(
-        "-password -refreshToken"
+        "-password -refreshToken -resetPasswordToken"
     );
 
     if (!createdUser) {
@@ -115,11 +131,11 @@ const loginUser = asyncHandler(async (req, res) => {
         throw new ApiError(401, "Invalid password");
     }
 
-    const { accessToken, refreshToken } = await generateTokens(user._id);
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
 
     // updated user
     const loggedUser = await User.findById({ _id: user._id }).select(
-        "-password -__v -refreshToken"
+        "-password -__v -refreshToken -resetPasswordToken"
     );
 
     return res
@@ -134,6 +150,46 @@ const loginUser = asyncHandler(async (req, res) => {
             )
         );
 });
+
+const forgotPassword = asyncHandler(async(req, res)=>{
+    const {email} = req.body
+
+    if(!email)
+    {
+        throw new ApiError(400,"Email field cannot be empty")
+    }
+
+    const user = await User.findOne({email})
+
+    if(!user)
+    {
+        throw new ApiError(404,'No account with this email found')
+    }
+
+    const {token} = await generatePasswordResetToken(user._id)
+
+    const resetLink =  `${process.env.CORS_ORIGIN}/users/api/v1/#/reset-password?token=${token}&id=${user._id}`
+
+    const mailParams = {
+        recipientLink: email,
+        targetLink: resetLink,
+        subject: "Password Reset",
+        message: "Click on the given link to reset your password"
+    }
+
+    const mailInfo = await sendMail(mailParams)
+
+    if(!mailInfo.messageId)
+    {
+        throw new ApiError(500, "Something went wrong while sending password reset mail!")
+    }
+
+    return res.status(200).json(
+        new ApiResponse(200, mailInfo.messageId, "Password reset mail sent successfully")
+    )
+    
+})
+
 
 const logoutUser = asyncHandler(async (req, res) => {
     await User.findByIdAndUpdate(
@@ -178,7 +234,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
         if (incomingRefreshToken !== user?.refreshToken) {
             throw new ApiError(401, "refresh token is expired or used");
         }
-        const { accessToken, refreshToken } = await generateTokens(user._id);
+        const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
 
         const updatedUser = await User.findById(user._id).select("-password -refreshToken")
 
@@ -198,4 +254,72 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     }
 });
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+
+const changePassword = asyncHandler(async(req, res)=>{
+
+   const {oldPassword, newPassword} = req.body
+
+   if(!oldPassword || !newPassword)
+   {
+    throw new ApiError(400, "Please fill all the details")
+   }
+
+   const user = await User.findById(req.user?._id)
+
+   if(!user)
+   {
+    throw new ApiError(404, "user not found")
+   }
+   
+   const isPasswordValid = await user.isPasswordCorrect(oldPassword)
+
+   if(!isPasswordValid)
+   {
+    throw new ApiError(401, "give the correct old password")
+   }
+
+   user.password = newPassword
+   await user.save()
+
+   return res.status(200).json(new ApiResponse(200, {}, "password changed successfully"))
+
+})
+
+const resetPassword = asyncHandler(async (req, res)=>{
+    const resetPasswordToken = req.query.token
+    const _id = req.query.id
+    const {newPassword} = req.body
+
+    if(!resetPasswordToken  || !_id){
+        throw new ApiError( 400,"Invalid URL");
+    }
+
+    const user = await User.findById(_id)
+
+    if(!user)
+    {
+        throw new ApiError(404, "User Not Found")
+    }
+
+    if(resetPasswordToken!==user.resetPasswordToken)
+    {
+        throw new ApiError(400, "Invalid Token")
+    }
+
+
+    
+    await User.findByIdAndUpdate(_id, 
+        {
+            $set: {
+                password: newPassword
+            },
+            $unset: {
+                resetPasswordToken: 1
+            }
+        }
+    )
+
+    return res.status(200).json(new ApiResponse(200, {}, "password update successfully"))
+})
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken, changePassword, forgotPassword, resetPassword };

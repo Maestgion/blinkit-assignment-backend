@@ -39,6 +39,9 @@ const userSchema = new mongoose.Schema(
     refreshToken: {
         type: String,
     },
+    resetPasswordToken:{
+        type: String,
+    }
 },
     { timestamps: true }
 );
@@ -77,6 +80,16 @@ userSchema.methods.generateRefreshToken = function (){
         process.env.REFRESH_TOKEN_SECRET,
         {
             expiresIn: process.env.REFRESH_TOKEN_EXPIRY
+        }
+    )
+}
+
+userSchema.methods.generateResetPasswordToken - function(){
+    return jwt.sign(
+        {}, 
+        process.env.RESET_PASSWORD_TOKEN_SECRET,
+        {
+            expiresIn: process.env.RESET_PASSWORD_TOKEN_EXPIRY
         }
     )
 }
